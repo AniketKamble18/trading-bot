@@ -1,8 +1,110 @@
-﻿@{
-    ViewData["Title"] = "Home Page";
+﻿@model tradingbot.ViewModels.DashboardViewModel
+@{
+    ViewData["Title"] = "Overview";
 }
 
-<div class="text-center">
-    <h1 class="display-4">Welcome</h1>
-    <p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
+<div class="dashboard-content" id="overview">
+    <div class="page-heading">
+        <div><div class="eyebrow" id="market-date">INDIA MARKET SESSION <span class="live-dot"></span></div><h1>Trading overview<span class="heading-period">.</span></h1><p>Your paper-trading workspace at a glance.</p></div>
+        <a class="btn btn-export" href="#activity"><span>↓</span> Activity</a>
+    </div>
+
+    <div class="demo-banner"><span class="demo-icon">i</span><div><strong>Paper trading environment</strong><span>All prices, order fills and P&amp;L are simulated. No real market connection or funds are used.</span></div><span class="demo-tag">VIRTUAL ₹10L</span></div>
+
+    @if (Model.Notice is not null)
+    {
+        <div class="order-alert @(Model.IsError ? "alert-error" : "alert-success")" role="status">@Model.Notice</div>
+    }
+
+    <section class="market-strip" id="markets" aria-label="Simulated market indices">
+        @foreach (var quote in Model.Quotes.Where(q => q.Symbol is "NIFTY" or "BANKNIFTY" or "SENSEX" or "FINNIFTY"))
+        {
+            var positive = quote.Change >= 0;
+            <article class="market-card">
+                <div class="market-card-title"><span>@quote.Name</span><span class="market-menu">···</span></div>
+                <div class="market-price" id="price-@quote.Symbol">₹@quote.Price.ToString("N2")</div>
+                <div class="market-change @(positive ? "positive" : "negative")" id="change-@quote.Symbol">@(positive ? "▲" : "▼") @Math.Abs(quote.Change).ToString("N2") <span>(@quote.ChangePercent.ToString("+0.00;-0.00;0.00")%)</span></div>
+                <svg class="sparkline @(positive ? "spark-up" : "spark-down")" viewBox="0 0 120 30" preserveAspectRatio="none" aria-hidden="true"><path d="M0 22 C9 21 9 14 18 17 S29 25 38 16 49 19 58 11 67 15 77 9 87 17 96 10 108 12 120 4" /></svg>
+            </article>
+        }
+    </section>
+
+    <section class="metric-grid" aria-label="Portfolio summary">
+        <article class="metric-card"><div class="metric-label">PORTFOLIO VALUE <span class="metric-more">···</span></div><div class="metric-value">₹@Model.Account.PortfolioValue.ToString("N2")</div><div class="metric-caption"><span class="metric-icon icon-violet">◈</span> Virtual account equity</div></article>
+        <article class="metric-card"><div class="metric-label">TODAY'S P&amp;L <span class="metric-more">···</span></div><div class="metric-value @(Model.Account.DailyPnl >= 0 ? "positive" : "negative")">@(Model.Account.DailyPnl >= 0 ? "+" : "−")₹@Math.Abs(Model.Account.DailyPnl).ToString("N2")</div><div class="metric-caption"><span class="metric-icon icon-green">↗</span> Realized + unrealized</div></article>
+        <article class="metric-card"><div class="metric-label">AVAILABLE CASH <span class="metric-more">···</span></div><div class="metric-value">₹@Model.Account.AvailableCash.ToString("N2")</div><div class="metric-caption"><span class="metric-icon icon-blue">₹</span> Of ₹@Model.Account.StartingBalance.ToString("N0") virtual</div></article>
+        <article class="metric-card"><div class="metric-label">OPEN POSITIONS <span class="metric-more">···</span></div><div class="metric-value">@Model.Account.Positions.Count.ToString("00")</div><div class="metric-caption"><span class="metric-icon icon-orange">▤</span> @Model.Account.OrdersToday orders today</div></article>
+    </section>
+
+    <div class="workspace-grid">
+        <section class="panel chart-panel">
+            <div class="panel-heading"><div><div class="panel-title">Market overview</div><div class="panel-subtitle"><span class="selected-symbol" id="chart-symbol">NIFTY 50</span> <span class="timeframe-note">· illustrative demo chart</span></div></div><div class="chart-tools" aria-label="Chart timeframe controls are not available in the demo"><button class="timeframe selected" type="button" disabled>1D</button><button class="timeframe" type="button" disabled>1W</button><button class="timeframe" type="button" disabled>1M</button><span class="chart-expand">↗</span></div></div>
+            <div class="chart-summary"><span class="chart-main-price" id="chart-price">₹@Model.Quotes.First(q => q.Symbol == "NIFTY").Price.ToString("N2")</span><span class="chart-market-status"><i></i> Demo stream</span></div>
+            <div class="chart-wrap">
+                <div class="chart-y-labels"><span>24,500</span><span>24,400</span><span>24,300</span><span>24,200</span><span>24,100</span></div>
+                <svg class="main-chart" viewBox="0 0 800 220" preserveAspectRatio="none" role="img" aria-label="Illustrative simulated Nifty price chart">
+                    <defs><linearGradient id="chartFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#28c896" stop-opacity=".22"/><stop offset="1" stop-color="#28c896" stop-opacity="0"/></linearGradient></defs>
+                    <path class="chart-area" d="M0 155 C28 150 35 128 65 134 S110 162 140 128 175 137 205 113 245 125 270 95 310 112 340 101 380 118 410 85 450 103 480 77 520 88 550 95 580 62 620 79 650 60 680 73 710 44 750 63 800 34 L800 220 L0 220 Z"/>
+                    <path class="chart-line" d="M0 155 C28 150 35 128 65 134 S110 162 140 128 175 137 205 113 245 125 270 95 310 112 340 101 380 118 410 85 450 103 480 77 520 88 550 95 580 62 620 79 650 60 680 73 710 44 750 63 800 34"/>
+                    <line x1="0" y1="84" x2="800" y2="84" class="chart-crossline"/><circle cx="800" cy="34" r="4" class="chart-current-dot"/>
+                </svg>
+                <div class="chart-x-labels"><span>09:15</span><span>10:30</span><span>11:45</span><span>13:00</span><span>14:15</span><span>15:30</span></div>
+            </div>
+            <div class="chart-legend"><span><i class="legend-price"></i> Price</span><span><i class="legend-volume"></i> Volume</span><span class="chart-disclaimer">Illustrative only · not historical exchange data</span></div>
+        </section>
+
+        <section class="panel order-panel" id="paper-terminal">
+            <div class="panel-heading"><div><div class="panel-title">Quick order</div><div class="panel-subtitle">Paper trading · market order</div></div><span class="order-mode">DEMO</span></div>
+            <form asp-controller="PaperTrading" asp-action="PlaceOrder" method="post" class="order-form">
+                @Html.AntiForgeryToken()
+                <label for="symbol">Instrument</label>
+                <select id="symbol" name="symbol" class="form-select order-input">
+                    @foreach (var quote in Model.Quotes)
+                    {
+                        <option value="@quote.Symbol">@quote.Name (@quote.Symbol)</option>
+                    }
+                </select>
+                <div class="side-switch" role="group" aria-label="Order side"><label class="side-buy"><input type="radio" name="side" value="Buy" checked /> Buy</label><label class="side-sell"><input type="radio" name="side" value="Sell" /> Sell</label></div>
+                <label for="quantity">Quantity <span class="field-hint">Max order ₹2,00,000</span></label>
+                <div class="quantity-wrap"><button type="button" class="qty-button" data-step="-1" aria-label="Decrease quantity">−</button><input id="quantity" name="quantity" type="number" class="form-control order-input quantity-input" min="1" max="100000" value="1" required /><button type="button" class="qty-button" data-step="1" aria-label="Increase quantity">+</button></div>
+                <div class="estimated-row"><span>Estimated value</span><strong id="estimated-value">—</strong></div>
+                <button class="submit-order" type="submit"><span id="submit-label">Buy</span> <span>→</span></button>
+                <div class="risk-note"><span>◇</span> Risk guard active · Long-only · no leverage</div>
+            </form>
+        </section>
+    </div>
+
+    <section class="panel table-panel" id="positions">
+        <div class="panel-heading table-heading"><div><div class="panel-title">Open positions</div><div class="panel-subtitle">Mark-to-demo-price valuation</div></div><span class="count-badge">@Model.Account.Positions.Count positions</span></div>
+        <div class="table-responsive"><table class="table desk-table"><thead><tr><th>INSTRUMENT</th><th>QTY</th><th>AVG. PRICE</th><th>LTP</th><th>MARKET VALUE</th><th>UNREALIZED P&amp;L</th></tr></thead><tbody>
+            @if (Model.Account.Positions.Count == 0)
+            {
+                <tr><td colspan="6" class="empty-state"><span class="empty-icon">▤</span><strong>No open positions yet</strong><span>Place a paper order to see your position here.</span></td></tr>
+            }
+            else
+            {
+                @foreach (var position in Model.Account.Positions)
+                {
+                    <tr><td class="instrument-cell"><span class="instrument-avatar">@position.Symbol.Substring(0, 1)</span><strong>@position.Symbol</strong></td><td>@position.Quantity</td><td>₹@position.AveragePrice.ToString("N2")</td><td>₹@position.LastPrice.ToString("N2")</td><td>₹@position.MarketValue.ToString("N2")</td><td class="@(position.UnrealizedPnl >= 0 ? "positive" : "negative")">@(position.UnrealizedPnl >= 0 ? "+" : "−")₹@Math.Abs(position.UnrealizedPnl).ToString("N2")</td></tr>
+                }
+            }
+        </tbody></table></div>
+    </section>
+
+    <section class="panel table-panel activity-panel" id="activity">
+        <div class="panel-heading table-heading"><div><div class="panel-title">Recent paper orders</div><div class="panel-subtitle">Latest simulated executions</div></div><span class="count-badge">@Model.Account.OrdersToday today</span></div>
+        <div class="table-responsive"><table class="table desk-table"><thead><tr><th>INSTRUMENT</th><th>TYPE</th><th>QTY</th><th>FILL PRICE</th><th>VALUE</th><th>STATUS</th></tr></thead><tbody>
+            @if (Model.Account.RecentOrders.Count == 0)
+            {
+                <tr><td colspan="6" class="empty-state compact-empty">No simulated orders placed this session.</td></tr>
+            }
+            else
+            {
+                @foreach (var order in Model.Account.RecentOrders)
+                {
+                    <tr><td class="instrument-cell"><span class="instrument-avatar">@order.Symbol.Substring(0, 1)</span><strong>@order.Symbol</strong></td><td class="@(order.Side == OrderSide.Buy ? "positive" : "negative")">@order.Side</td><td>@order.Quantity</td><td>₹@order.FillPrice.ToString("N2")</td><td>₹@order.Notional.ToString("N2")</td><td><span class="filled-pill">FILLED · @order.SubmittedAt.ToLocalTime().ToString("HH:mm:ss")</span></td></tr>
+                }
+            }
+        </tbody></table></div>
+    </section>
 </div>

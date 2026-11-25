@@ -1,14 +1,24 @@
 using Microsoft.AspNetCore.Mvc;
 using System.Diagnostics;
 using tradingbot.Models;
+using tradingbot.Services;
+using tradingbot.ViewModels;
 
 namespace tradingbot.Controllers
 {
-    public class HomeController : Controller
+    public class HomeController(IMarketFeed marketFeed, IPaperTradingService paperTradingService) : Controller
     {
         public IActionResult Index()
         {
-            return View();
+            var notice = TempData["OrderNotice"] as string;
+            var error = TempData["OrderError"] as string;
+            return View(new DashboardViewModel
+            {
+                Quotes = marketFeed.GetQuotes(),
+                Account = paperTradingService.GetSnapshot(HttpContext.Session.Id),
+                Notice = error ?? notice,
+                IsError = error is not null
+            });
         }
 
         public IActionResult Privacy()

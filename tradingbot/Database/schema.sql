@@ -1,0 +1,254 @@
+/* SQL Server 2022 logical schema for the production platform.
+   Paper trading in this starter currently uses an in-memory demo store; do not use that store for production. */
+CREATE SCHEMA trading;
+GO
+
+CREATE TABLE trading.Users (
+	UserId UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_Users PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+	Email NVARCHAR(320) NOT NULL,
+	DisplayName NVARCHAR(120) NOT NULL,
+	PasswordHash NVARCHAR(500) NOT NULL,
+	IsActive BIT NOT NULL CONSTRAINT DF_Users_IsActive DEFAULT 1,
+	CreatedAtUtc DATETIME2(3) NOT NULL CONSTRAINT DF_Users_CreatedAt DEFAULT SYSUTCDATETIME(),
+	CONSTRAINT UQ_Users_Email UNIQUE (Email)
+);
+
+CREATE TABLE trading.Roles (
+	RoleId INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Roles PRIMARY KEY,
+	Name NVARCHAR(80) NOT NULL CONSTRAINT UQ_Roles_Name UNIQUE
+);
+CREATE TABLE trading.Permissions (
+	PermissionId INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Permissions PRIMARY KEY,
+	Name NVARCHAR(120) NOT NULL CONSTRAINT UQ_Permissions_Name UNIQUE
+);
+CREATE TABLE trading.UserRoles (
+	UserId UNIQUEIDENTIFIER NOT NULL,
+	RoleId INT NOT NULL,
+	CONSTRAINT PK_UserRoles PRIMARY KEY (UserId, RoleId),
+	CONSTRAINT FK_UserRoles_Users FOREIGN KEY (UserId) REFERENCES trading.Users(UserId),
+	CONSTRAINT FK_UserRoles_Roles FOREIGN KEY (RoleId) REFERENCES trading.Roles(RoleId)
+);
+CREATE TABLE trading.RolePermissions (
+	RoleId INT NOT NULL,
+	PermissionId INT NOT NULL,
+	CONSTRAINT PK_RolePermissions PRIMARY KEY (RoleId, PermissionId),
+	CONSTRAINT FK_RolePermissions_Roles FOREIGN KEY (RoleId) REFERENCES trading.Roles(RoleId),
+	CONSTRAINT FK_RolePermissions_Permissions FOREIGN KEY (PermissionId) REFERENCES trading.Permissions(PermissionId)
+);
+
+CREATE TABLE trading.Portfolios (
+	PortfolioId UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_Portfolios PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+	UserId UNIQUEIDENTIFIER NOT NULL,
+	Name NVARCHAR(120) NOT NULL,
+	Mode VARCHAR(10) NOT NULL,
+	BaseCurrency CHAR(3) NOT NULL CONSTRAINT DF_Portfolios_Currency DEFAULT 'INR',
+	CreatedAtUtc DATETIME2(3) NOT NULL CONSTRAINT DF_Portfolios_CreatedAt DEFAULT SYSUTCDATETIME(),
+	CONSTRAINT FK_Portfolios_Users FOREIGN KEY (UserId) REFERENCES trading.Users(UserId),
+	CONSTRAINT CK_Portfolios_Mode CHECK (Mode IN ('Paper','Live'))
+);
+CREATE TABLE trading.RiskSettings (
+	RiskSettingsId UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_RiskSettings PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+	PortfolioId UNIQUEIDENTIFIER NOT NULL,
+	MaxRiskPerTrade DECIMAL(19,4) NOT NULL,
+	MaxDailyLoss DECIMAL(19,4) NOT NULL,
+	MaxWeeklyLoss DECIMAL(19,4) NOT NULL,
+	MaxOrderQuantity INT NOT NULL,
+	ConsecutiveLossLimit INT NOT NULL,
+	IsTradingHalted BIT NOT NULL CONSTRAINT DF_RiskSettings_Halted DEFAULT 0,
+	UpdatedAtUtc DATETIME2(3) NOT NULL CONSTRAINT DF_RiskSettings_UpdatedAt DEFAULT SYSUTCDATETIME(),
+	CONSTRAINT UQ_RiskSettings_Portfolio UNIQUE (PortfolioId),
+	CONSTRAINT FK_RiskSettings_Portfolios FOREIGN KEY (PortfolioId) REFERENCES trading.Portfolios(PortfolioId),
+	CONSTRAINT CK_RiskSettings_Positive CHECK (MaxRiskPerTrade > 0 AND MaxDailyLoss > 0 AND MaxWeeklyLoss > 0 AND MaxOrderQuantity > 0)
+);
+CREATE TABLE trading.Indicators (
+	IndicatorId UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_Indicators PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+	UserId UNIQUEIDENTIFIER NOT NULL,
+	Name NVARCHAR(120) NOT NULL,
+	DefinitionJson NVARCHAR(MAX) NOT NULL,
+	IsBuiltIn BIT NOT NULL CONSTRAINT DF_Indicators_BuiltIn DEFAULT 0,
+	CreatedAtUtc DATETIME2(3) NOT NULL CONSTRAINT DF_Indicators_CreatedAt DEFAULT SYSUTCDATETIME(),
+	CONSTRAINT FK_Indicators_Users FOREIGN KEY (UserId) REFERENCES trading.Users(UserId),
+	CONSTRAINT CK_Indicators_Json CHECK (ISJSON(DefinitionJson) = 1)
+);
+CREATE TABLE trading.Strategies (
+	StrategyId UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_Strategies PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+	UserId UNIQUEIDENTIFIER NOT NULL,
+	Name NVARCHAR(160) NOT NULL,
+	DefinitionJson NVARCHAR(MAX) NOT NULL,
+	IsEnabled BIT NOT NULL CONSTRAINT DF_Strategies_Enabled DEFAULT 0,
+	CreatedAtUtc DATETIME2(3) NOT NULL CONSTRAINT DF_Strategies_CreatedAt DEFAULT SYSUTCDATETIME(),
+	UpdatedAtUtc DATETIME2(3) NOT NULL CONSTRAINT DF_Strategies_UpdatedAt DEFAULT SYSUTCDATETIME(),
+	CONSTRAINT FK_Strategies_Users FOREIGN KEY (UserId) REFERENCES trading.Users(UserId),
+	CONSTRAINT CK_Strategies_Json CHECK (ISJSON(DefinitionJson) = 1)
+);
+CREATE TABLE trading.Watchlists (
+	WatchlistId UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_Watchlists PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+	UserId UNIQUEIDENTIFIER NOT NULL,
+	Name NVARCHAR(100) NOT NULL,
+	SymbolsJson NVARCHAR(MAX) NOT NULL,
+	CreatedAtUtc DATETIME2(3) NOT NULL CONSTRAINT DF_Watchlists_CreatedAt DEFAULT SYSUTCDATETIME(),
+	CONSTRAINT FK_Watchlists_Users FOREIGN KEY (UserId) REFERENCES trading.Users(UserId),
+	CONSTRAINT CK_Watchlists_Json CHECK (ISJSON(SymbolsJson) = 1)
+);
+
+CREATE TABLE trading.Orders (
+	OrderId UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_Orders PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+	PortfolioId UNIQUEIDENTIFIER NOT NULL,
+	StrategyId UNIQUEIDENTIFIER NULL,
+	ClientOrderId NVARCHAR(80) NOT NULL,
+	InstrumentToken NVARCHAR(80) NOT NULL,
+	Exchange VARCHAR(12) NOT NULL,
+	Side VARCHAR(4) NOT NULL,
+	OrderType VARCHAR(16) NOT NULL,
+	Quantity INT NOT NULL,
+	LimitPrice DECIMAL(19,4) NULL,
+	StopPrice DECIMAL(19,4) NULL,
+	Status VARCHAR(20) NOT NULL,
+	BrokerOrderId NVARCHAR(100) NULL,
+	CreatedAtUtc DATETIME2(3) NOT NULL CONSTRAINT DF_Orders_CreatedAt DEFAULT SYSUTCDATETIME(),
+	UpdatedAtUtc DATETIME2(3) NOT NULL CONSTRAINT DF_Orders_UpdatedAt DEFAULT SYSUTCDATETIME(),
+	CONSTRAINT FK_Orders_Portfolios FOREIGN KEY (PortfolioId) REFERENCES trading.Portfolios(PortfolioId),
+	CONSTRAINT FK_Orders_Strategies FOREIGN KEY (StrategyId) REFERENCES trading.Strategies(StrategyId),
+	CONSTRAINT UQ_Orders_ClientOrder UNIQUE (PortfolioId, ClientOrderId),
+	CONSTRAINT CK_Orders_Side CHECK (Side IN ('Buy','Sell')),
+	CONSTRAINT CK_Orders_Quantity CHECK (Quantity > 0)
+);
+CREATE TABLE trading.Trades (
+	TradeId UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_Trades PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+	OrderId UNIQUEIDENTIFIER NOT NULL,
+	PortfolioId UNIQUEIDENTIFIER NOT NULL,
+	InstrumentToken NVARCHAR(80) NOT NULL,
+	Quantity INT NOT NULL,
+	FillPrice DECIMAL(19,4) NOT NULL,
+	Fees DECIMAL(19,4) NOT NULL CONSTRAINT DF_Trades_Fees DEFAULT 0,
+	ExecutedAtUtc DATETIME2(3) NOT NULL,
+	CONSTRAINT FK_Trades_Orders FOREIGN KEY (OrderId) REFERENCES trading.Orders(OrderId),
+	CONSTRAINT FK_Trades_Portfolios FOREIGN KEY (PortfolioId) REFERENCES trading.Portfolios(PortfolioId),
+	CONSTRAINT CK_Trades_Quantity CHECK (Quantity > 0)
+);
+CREATE TABLE trading.Positions (
+	PositionId UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_Positions PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+	PortfolioId UNIQUEIDENTIFIER NOT NULL,
+	InstrumentToken NVARCHAR(80) NOT NULL,
+	NetQuantity INT NOT NULL,
+	AveragePrice DECIMAL(19,4) NOT NULL,
+	RealizedPnl DECIMAL(19,4) NOT NULL CONSTRAINT DF_Positions_Realized DEFAULT 0,
+	UpdatedAtUtc DATETIME2(3) NOT NULL CONSTRAINT DF_Positions_UpdatedAt DEFAULT SYSUTCDATETIME(),
+	CONSTRAINT FK_Positions_Portfolios FOREIGN KEY (PortfolioId) REFERENCES trading.Portfolios(PortfolioId),
+	CONSTRAINT UQ_Positions_PortfolioInstrument UNIQUE (PortfolioId, InstrumentToken)
+);
+CREATE TABLE trading.PaperOrders (
+	PaperOrderId UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_PaperOrders PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+	PortfolioId UNIQUEIDENTIFIER NOT NULL,
+	InstrumentToken NVARCHAR(80) NOT NULL,
+	Side VARCHAR(4) NOT NULL,
+	OrderType VARCHAR(16) NOT NULL,
+	Quantity INT NOT NULL,
+	FillPrice DECIMAL(19,4) NOT NULL,
+	Status VARCHAR(20) NOT NULL,
+	CreatedAtUtc DATETIME2(3) NOT NULL CONSTRAINT DF_PaperOrders_CreatedAt DEFAULT SYSUTCDATETIME(),
+	CONSTRAINT FK_PaperOrders_Portfolios FOREIGN KEY (PortfolioId) REFERENCES trading.Portfolios(PortfolioId),
+	CONSTRAINT CK_PaperOrders_Side CHECK (Side IN ('Buy','Sell')),
+	CONSTRAINT CK_PaperOrders_Quantity CHECK (Quantity > 0)
+);
+CREATE TABLE trading.PaperTrades (
+	PaperTradeId UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_PaperTrades PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+	PaperOrderId UNIQUEIDENTIFIER NOT NULL,
+	Quantity INT NOT NULL,
+	FillPrice DECIMAL(19,4) NOT NULL,
+	ExecutedAtUtc DATETIME2(3) NOT NULL,
+	CONSTRAINT FK_PaperTrades_PaperOrders FOREIGN KEY (PaperOrderId) REFERENCES trading.PaperOrders(PaperOrderId)
+);
+
+CREATE TABLE trading.MarketData (
+	MarketDataId BIGINT IDENTITY(1,1) NOT NULL CONSTRAINT PK_MarketData PRIMARY KEY,
+	InstrumentToken NVARCHAR(80) NOT NULL,
+	Exchange VARCHAR(12) NOT NULL,
+	Interval VARCHAR(8) NOT NULL,
+	TimestampUtc DATETIME2(3) NOT NULL,
+	OpenPrice DECIMAL(19,4) NOT NULL,
+	HighPrice DECIMAL(19,4) NOT NULL,
+	LowPrice DECIMAL(19,4) NOT NULL,
+	ClosePrice DECIMAL(19,4) NOT NULL,
+	Volume BIGINT NOT NULL,
+	OpenInterest BIGINT NULL,
+	CONSTRAINT UQ_MarketData_Candle UNIQUE (Exchange, InstrumentToken, Interval, TimestampUtc)
+);
+CREATE INDEX IX_MarketData_Query ON trading.MarketData (Exchange, InstrumentToken, Interval, TimestampUtc DESC);
+CREATE TABLE trading.OptionChain (
+	OptionChainId BIGINT IDENTITY(1,1) NOT NULL CONSTRAINT PK_OptionChain PRIMARY KEY,
+	Underlying NVARCHAR(80) NOT NULL,
+	ExpiryDate DATE NOT NULL,
+	Strike DECIMAL(19,4) NOT NULL,
+	OptionType CHAR(2) NOT NULL,
+	TimestampUtc DATETIME2(3) NOT NULL,
+	LastPrice DECIMAL(19,4) NOT NULL,
+	OpenInterest BIGINT NOT NULL,
+	Volume BIGINT NOT NULL,
+	CONSTRAINT CK_OptionChain_Type CHECK (OptionType IN ('CE','PE'))
+);
+CREATE INDEX IX_OptionChain_Snapshot ON trading.OptionChain (Underlying, ExpiryDate, TimestampUtc DESC, Strike);
+CREATE TABLE trading.Signals (
+	SignalId UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_Signals PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+	StrategyId UNIQUEIDENTIFIER NULL,
+	UserId UNIQUEIDENTIFIER NOT NULL,
+	InstrumentToken NVARCHAR(80) NOT NULL,
+	Direction VARCHAR(4) NOT NULL,
+	Confidence DECIMAL(5,2) NULL,
+	ReasonJson NVARCHAR(MAX) NULL,
+	CreatedAtUtc DATETIME2(3) NOT NULL CONSTRAINT DF_Signals_CreatedAt DEFAULT SYSUTCDATETIME(),
+	CONSTRAINT FK_Signals_Strategies FOREIGN KEY (StrategyId) REFERENCES trading.Strategies(StrategyId),
+	CONSTRAINT FK_Signals_Users FOREIGN KEY (UserId) REFERENCES trading.Users(UserId),
+	CONSTRAINT CK_Signals_ReasonJson CHECK (ReasonJson IS NULL OR ISJSON(ReasonJson) = 1)
+);
+CREATE TABLE trading.News (
+	NewsId UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_News PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+	Source NVARCHAR(160) NOT NULL,
+	ExternalId NVARCHAR(200) NULL,
+	Headline NVARCHAR(500) NOT NULL,
+	Url NVARCHAR(2048) NULL,
+	PublishedAtUtc DATETIME2(3) NOT NULL,
+	Sentiment VARCHAR(8) NOT NULL,
+	SentimentScore DECIMAL(5,4) NULL,
+	CONSTRAINT CK_News_Sentiment CHECK (Sentiment IN ('Bullish','Bearish','Neutral'))
+);
+CREATE TABLE trading.AIAnalysis (
+	AIAnalysisId UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_AIAnalysis PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+	UserId UNIQUEIDENTIFIER NOT NULL,
+	PortfolioId UNIQUEIDENTIFIER NULL,
+	Prompt NVARCHAR(2000) NOT NULL,
+	Result NVARCHAR(MAX) NOT NULL,
+	ModelName NVARCHAR(120) NOT NULL,
+	Confidence DECIMAL(5,2) NULL,
+	CreatedAtUtc DATETIME2(3) NOT NULL CONSTRAINT DF_AIAnalysis_CreatedAt DEFAULT SYSUTCDATETIME(),
+	CONSTRAINT FK_AIAnalysis_Users FOREIGN KEY (UserId) REFERENCES trading.Users(UserId),
+	CONSTRAINT FK_AIAnalysis_Portfolios FOREIGN KEY (PortfolioId) REFERENCES trading.Portfolios(PortfolioId)
+);
+CREATE TABLE trading.Backtests (
+	BacktestId UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_Backtests PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+	StrategyId UNIQUEIDENTIFIER NOT NULL,
+	UserId UNIQUEIDENTIFIER NOT NULL,
+	InstrumentToken NVARCHAR(80) NOT NULL,
+	StartDate DATE NOT NULL,
+	EndDate DATE NOT NULL,
+	MetricsJson NVARCHAR(MAX) NOT NULL,
+	Status VARCHAR(16) NOT NULL,
+	CreatedAtUtc DATETIME2(3) NOT NULL CONSTRAINT DF_Backtests_CreatedAt DEFAULT SYSUTCDATETIME(),
+	CONSTRAINT FK_Backtests_Strategies FOREIGN KEY (StrategyId) REFERENCES trading.Strategies(StrategyId),
+	CONSTRAINT FK_Backtests_Users FOREIGN KEY (UserId) REFERENCES trading.Users(UserId),
+	CONSTRAINT CK_Backtests_MetricsJson CHECK (ISJSON(MetricsJson) = 1),
+	CONSTRAINT CK_Backtests_DateRange CHECK (EndDate >= StartDate)
+);
+CREATE TABLE trading.AuditLogs (
+	AuditLogId BIGINT IDENTITY(1,1) NOT NULL CONSTRAINT PK_AuditLogs PRIMARY KEY,
+	UserId UNIQUEIDENTIFIER NULL,
+	Action NVARCHAR(160) NOT NULL,
+	EntityType NVARCHAR(100) NOT NULL,
+	EntityId NVARCHAR(100) NULL,
+	DetailsJson NVARCHAR(MAX) NULL,
+	CorrelationId NVARCHAR(100) NULL,
+	CreatedAtUtc DATETIME2(3) NOT NULL CONSTRAINT DF_AuditLogs_CreatedAt DEFAULT SYSUTCDATETIME(),
+	CONSTRAINT FK_AuditLogs_Users FOREIGN KEY (UserId) REFERENCES trading.Users(UserId),
+	CONSTRAINT CK_AuditLogs_Json CHECK (DetailsJson IS NULL OR ISJSON(DetailsJson) = 1)
+);
+GO
